@@ -1,0 +1,120 @@
+:root {
+  --fondo: #f3f5f8;
+  --panel: #ffffff;
+  --borde: #dfe4ea;
+  --texto: #1c2530;
+  --tenue: #66727f;
+  --primario: #1466d6;
+  --nav: #17212e;
+  --ok: #1d8a4e;
+  --alerta: #b26a00;
+  --mal: #c0392b;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; display: flex; min-height: 100vh;
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--fondo); color: var(--texto);
+}
+nav {
+  width: 210px; flex-shrink: 0; background: var(--nav); padding: 16px 10px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+nav .marca { color: #fff; font-weight: 700; font-size: 17px; padding: 6px 10px 16px; }
+nav a { color: #b9c4d0; text-decoration: none; padding: 9px 10px; border-radius: 6px; }
+nav a:hover { background: #223043; color: #fff; }
+nav a.activo { background: var(--primario); color: #fff; }
+main { flex: 1; padding: 24px 28px 60px; min-width: 0; max-width: 1280px; }
+
+h1 { font-size: 22px; margin: 0 0 16px; }
+h2 { font-size: 16px; margin: 0 0 10px; }
+a { color: var(--primario); }
+.tenue { color: var(--tenue); }
+.derecha { text-align: right; }
+.barra { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+.barra h1 { margin: 0; }
+.barra .espacio { flex: 1; }
+
+.panel { background: var(--panel); border: 1px solid var(--borde); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.rejilla { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin-bottom: 16px; }
+.dos { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); align-items: start; }
+.kpi { background: var(--panel); border: 1px solid var(--borde); border-radius: 8px; padding: 14px 16px; }
+.kpi .valor { font-size: 24px; font-weight: 700; }
+.kpi .etq { color: var(--tenue); font-size: 13px; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--tenue); }
+tr.fila-link { cursor: pointer; }
+tr.fila-link:hover { background: #f6f9fd; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vacio { color: var(--tenue); padding: 14px 4px; }
+.tabla-scroll { overflow-x: auto; }
+
+button, .btn {
+  font: inherit; cursor: pointer; border: 1px solid var(--borde); background: #fff; color: var(--texto);
+  padding: 7px 12px; border-radius: 6px; text-decoration: none; display: inline-block;
+}
+button:hover, .btn:hover { border-color: #b7c1cc; }
+button.primario, .btn.primario { background: var(--primario); border-color: var(--primario); color: #fff; }
+button.peligro { color: var(--mal); }
+button.mini { padding: 2px 8px; font-size: 13px; }
+
+input, select, textarea {
+  font: inherit; width: 100%; padding: 7px 9px; border: 1px solid #c5ced8; border-radius: 6px; background: #fff; color: var(--texto);
+}
+textarea { min-height: 70px; resize: vertical; }
+label { display: block; font-size: 13px; color: var(--tenue); margin-bottom: 10px; }
+label > input, label > select, label > textarea { margin-top: 3px; color: var(--texto); }
+.campos { display: grid; gap: 0 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.campos .ancho { grid-column: 1 / -1; }
+.barra input, .barra select { width: auto; }
+
+.chip { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #e8edf3; color: #3d4a58; white-space: nowrap; }
+.chip.cliente, .chip.pagada, .chip.listo, .chip.entregado { background: #dff3e7; color: var(--ok); }
+.chip.prospecto, .chip.enviada, .chip.esperando_aprobacion, .chip.esperando_refacciones { background: #fdf0d8; color: var(--alerta); }
+.chip.aceptada, .chip.en_reparacion, .chip.diagnostico { background: #dfeafb; color: var(--primario); }
+.chip.rechazada, .chip.cancelado { background: #fbe3e0; color: var(--mal); }
+
+.pestanas { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.pestanas button.activo { background: var(--nav); color: #fff; border-color: var(--nav); }
+.resultado { background: #f3f7fd; border: 1px solid #d3e1f5; border-radius: 6px; padding: 10px 12px; margin: 4px 0 12px; font-size: 14px; }
+.resultado table td { border: 0; padding: 2px 0; }
+.resultado .fuerte td { font-weight: 700; border-top: 1px solid #d3e1f5; padding-top: 6px; }
+.totales { margin-left: auto; width: 300px; max-width: 100%; }
+.totales td { border: 0; padding: 3px 10px; }
+.totales .total td { font-size: 18px; font-weight: 700; border-top: 2px solid var(--texto); }
+
+.kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(210px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 8px; }
+.columna { background: #e9edf2; border-radius: 8px; padding: 10px; min-height: 120px; }
+.columna h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--tenue); }
+.tarjeta { display: block; background: #fff; border: 1px solid var(--borde); border-radius: 6px; padding: 9px 10px; margin-bottom: 8px; text-decoration: none; color: inherit; font-size: 14px; }
+.tarjeta:hover { border-color: var(--primario); }
+.tarjeta .vencido { color: var(--mal); font-weight: 600; }
+
+.bitacora { list-style: none; margin: 0; padding: 0; }
+.bitacora li { border-left: 2px solid var(--borde); padding: 0 0 14px 12px; }
+.comentario { border-bottom: 1px solid var(--borde); padding: 8px 0; white-space: pre-wrap; }
+.comentario .meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--tenue); }
+
+dialog { border: 0; border-radius: 10px; padding: 20px; width: min(620px, 94vw); box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+dialog::backdrop { background: rgba(15, 23, 32, .5); }
+dialog .acciones { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+#aviso { position: fixed; bottom: 20px; right: 20px; background: var(--nav); color: #fff; padding: 10px 16px; border-radius: 8px; display: none; max-width: 360px; z-index: 10; }
+#aviso.error { background: var(--mal); }
+
+.solo-impresion { display: none; }
+@media (max-width: 760px) {
+  body { flex-direction: column; }
+  nav { width: auto; flex-direction: row; flex-wrap: wrap; padding: 8px; }
+  nav .marca { width: 100%; padding-bottom: 6px; }
+  main { padding: 16px; }
+  .dos { grid-template-columns: 1fr; }
+}
+@media print {
+  nav, .no-imprimir, #aviso { display: none !important; }
+  body { background: #fff; }
+  main { padding: 0; max-width: none; }
+  .panel { border: 0; padding: 0; }
+  .solo-impresion { display: block; }
+}
