@@ -7,7 +7,7 @@ consuman los mismos datos.
 import json
 import os
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime
 
 from flask import Flask, g, jsonify, request
 
@@ -138,7 +138,44 @@ CREATE TABLE IF NOT EXISTS config (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     datos TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS recordatorios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente_id INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+    texto TEXT NOT NULL,
+    fecha TEXT NOT NULL,
+    hecho INTEGER NOT NULL DEFAULT 0,
+    creado TEXT NOT NULL,
+    completado_en TEXT
+);
+CREATE TABLE IF NOT EXISTS rollos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    material TEXT NOT NULL,
+    color TEXT DEFAULT '',
+    marca TEXT DEFAULT '',
+    peso_inicial REAL NOT NULL,
+    restante REAL NOT NULL,
+    costo REAL NOT NULL DEFAULT 0,
+    fecha_adquisicion TEXT NOT NULL,
+    notas TEXT DEFAULT '',
+    creado TEXT NOT NULL
+);
+-- gramos > 0 es consumo de material; gramos < 0 es material que regresa al rollo.
+CREATE TABLE IF NOT EXISTS material_movimientos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rollo_id INTEGER NOT NULL REFERENCES rollos(id) ON DELETE CASCADE,
+    tipo TEXT NOT NULL,
+    gramos REAL NOT NULL,
+    nota TEXT DEFAULT '',
+    cotizacion_id INTEGER REFERENCES cotizaciones(id) ON DELETE SET NULL,
+    creado TEXT NOT NULL
+);
 """
+
+# Columnas agregadas después de la primera versión: (tabla, columna, definición).
+MIGRACIONES = [
+    ("clientes", "fecha_nacimiento", "TEXT DEFAULT ''"),
+    ("productos", "gramos_pieza", "REAL NOT NULL DEFAULT 0"),
+]
 
 
 class ApiError(Exception):
@@ -179,6 +216,10 @@ def _cerrar_db(_):
 def init_db():
     conexion = sqlite3.connect(DB_PATH)
     conexion.executescript(SCHEMA)
+    for tabla, columna, definicion in MIGRACIONES:
+        existentes = [c[1] for c in conexion.execute(f"PRAGMA table_info({tabla})")]
+        if columna not in existentes:
+            conexion.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {definicion}")
     conexion.commit()
     conexion.close()
 
@@ -222,6 +263,18 @@ def numero(valor, nombre="valor"):
     if n != n or n < 0 or n == float("inf"):
         raise ApiError(f"'{nombre}' debe ser un número positivo")
     return n
+
+
+def fecha_iso(datos, clave, requerido=False):
+    valor = str(datos.get(clave) or "").strip()
+    if not valor:
+        if requerido:
+            raise ApiError(f"El campo '{clave}' es obligatorio")
+        return ""
+    try:
+        return datetime.strptime(valor, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        raise ApiError(f"'{clave}' debe ser una fecha válida")
 
 
 def id_cliente(datos):
@@ -323,9 +376,9 @@ def crear_cliente():
     valores = [texto(datos, c, requerido=(c == "nombre")) for c in CAMPOS_CLIENTE]
     tipo = datos.get("tipo") if datos.get("tipo") in ("prospecto", "cliente") else "prospecto"
     cur = db().execute(
-        "INSERT INTO clientes (nombre, telefono, email, empresa, origen, notas, tipo, creado) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (*valores, tipo, ahora()),
+        "INSERT INTO clientes (nombre, telefono, email, empresa, origen, notas, tipo, "
+        "fecha_nacimiento, creado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (*valores, tipo, fecha_iso(datos, "fecha_nacimiento"), ahora()),
     )
     db().commit()
     return jsonify(fila("SELECT * FROM clientes WHERE id = ?", (cur.lastrowid,))), 201
@@ -349,6 +402,9 @@ def ver_cliente(cid):
     cliente["comentarios"] = filas(
         "SELECT * FROM comentarios WHERE cliente_id = ? ORDER BY id DESC", (cid,)
     )
+    cliente["recordatorios"] = filas(
+        "SELECT * FROM recordatorios WHERE cliente_id = ? ORDER BY hecho, fecha, id", (cid,)
+    )
     return jsonify(cliente)
 
 
@@ -359,9 +415,9 @@ def editar_cliente(cid):
     valores = [texto({**actual, **datos}, c, requerido=(c == "nombre")) for c in CAMPOS_CLIENTE]
     tipo = datos.get("tipo") if datos.get("tipo") in ("prospecto", "cliente") else actual["tipo"]
     db().execute(
-        "UPDATE clientes SET nombre=?, telefono=?, email=?, empresa=?, origen=?, notas=?, tipo=? "
-        "WHERE id=?",
-        (*valores, tipo, cid),
+        "UPDATE clientes SET nombre=?, telefono=?, email=?, empresa=?, origen=?, notas=?, tipo=?, "
+        "fecha_nacimiento=? WHERE id=?",
+        (*valores, tipo, fecha_iso({**actual, **datos}, "fecha_nacimiento"), cid),
     )
     db().commit()
     return jsonify(fila("SELECT * FROM clientes WHERE id = ?", (cid,)))
@@ -397,6 +453,194 @@ def borrar_comentario(mid):
     db().execute("DELETE FROM comentarios WHERE id = ?", (mid,))
     db().commit()
     return jsonify(ok=True)
+
+
+# ------------------------------------------------------------- recordatorios
+
+
+@app.get("/api/v1/recordatorios")
+def listar_recordatorios():
+    return jsonify(
+        filas(
+            "SELECT r.*, c.nombre AS cliente_nombre FROM recordatorios r "
+            "JOIN clientes c ON c.id = r.cliente_id WHERE r.hecho = 0 ORDER BY r.fecha, r.id"
+        )
+    )
+
+
+@app.post("/api/v1/clientes/<int:cid>/recordatorios")
+def crear_recordatorio(cid):
+    fila("SELECT id FROM clientes WHERE id = ?", (cid,))
+    datos = cuerpo()
+    db().execute(
+        "INSERT INTO recordatorios (cliente_id, texto, fecha, creado) VALUES (?, ?, ?, ?)",
+        (cid, texto(datos, "texto", requerido=True), fecha_iso(datos, "fecha", requerido=True),
+         ahora()),
+    )
+    db().commit()
+    return jsonify(ok=True), 201
+
+
+@app.post("/api/v1/recordatorios/<int:rid>/hecho")
+def marcar_recordatorio(rid):
+    fila("SELECT id FROM recordatorios WHERE id = ?", (rid,))
+    hecho = bool(cuerpo().get("hecho", True))
+    db().execute(
+        "UPDATE recordatorios SET hecho=?, completado_en=? WHERE id=?",
+        (int(hecho), ahora() if hecho else None, rid),
+    )
+    db().commit()
+    return jsonify(ok=True)
+
+
+@app.delete("/api/v1/recordatorios/<int:rid>")
+def borrar_recordatorio(rid):
+    db().execute("DELETE FROM recordatorios WHERE id = ?", (rid,))
+    db().commit()
+    return jsonify(ok=True)
+
+
+# ------------------------------------------------- inventario de filamento
+
+TIPOS_MOVIMIENTO = {
+    "cotizacion": "Cotización autorizada",
+    "fallo": "Pieza fallida",
+    "stock": "Fabricación de stock",
+    "ajuste": "Ajuste manual",
+}
+
+
+def mover_material(rollo_id, gramos, tipo, nota="", cotizacion_id=None):
+    """Descuenta gramos del rollo (o los regresa si son negativos) y lo registra."""
+    db().execute("UPDATE rollos SET restante = restante - ? WHERE id = ?", (gramos, rollo_id))
+    db().execute(
+        "INSERT INTO material_movimientos (rollo_id, tipo, gramos, nota, cotizacion_id, creado) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (rollo_id, tipo, gramos, nota, cotizacion_id, ahora()),
+    )
+
+
+def consumo_cotizacion(partidas):
+    """Gramos por rollo que consumen las partidas de impresión 3D de una cotización."""
+    consumo = {}
+    for p in partidas:
+        detalle = p.get("detalle") or {}
+        if p.get("categoria") != "impresion3d" or not detalle.get("rollo_id"):
+            continue
+        try:
+            gramos = float(detalle.get("peso") or 0) * float(p.get("cantidad") or 0)
+            rollo_id = int(detalle["rollo_id"])
+        except (TypeError, ValueError):
+            continue
+        if gramos > 0:
+            consumo[rollo_id] = consumo.get(rollo_id, 0) + gramos
+    return consumo
+
+
+def descontar_cotizacion(qid):
+    """Descuenta el material de una cotización autorizada. No hace nada si ya se descontó."""
+    if db().execute(
+        "SELECT 1 FROM material_movimientos WHERE cotizacion_id = ? LIMIT 1", (qid,)
+    ).fetchone():
+        return
+    q = fila("SELECT partidas FROM cotizaciones WHERE id = ?", (qid,))
+    for rollo_id, gramos in consumo_cotizacion(json.loads(q["partidas"])).items():
+        if fila("SELECT id FROM rollos WHERE id = ?", (rollo_id,), requerido=False):
+            mover_material(rollo_id, gramos, "cotizacion", folio("COT", qid), qid)
+
+
+def revertir_cotizacion(qid):
+    """Regresa al inventario el material descontado por una cotización."""
+    for m in filas("SELECT * FROM material_movimientos WHERE cotizacion_id = ?", (qid,)):
+        db().execute(
+            "UPDATE rollos SET restante = restante + ? WHERE id = ?", (m["gramos"], m["rollo_id"])
+        )
+    db().execute("DELETE FROM material_movimientos WHERE cotizacion_id = ?", (qid,))
+
+
+def datos_rollo(datos):
+    peso = numero(datos.get("peso_inicial"), "peso del rollo")
+    if peso <= 0:
+        raise ApiError("El peso del rollo debe ser mayor a cero")
+    return {
+        "material": texto(datos, "material", requerido=True),
+        "color": texto(datos, "color"),
+        "marca": texto(datos, "marca"),
+        "peso_inicial": peso,
+        "costo": round(numero(datos.get("costo"), "costo"), 2),
+        "fecha_adquisicion": fecha_iso(datos, "fecha_adquisicion") or date.today().isoformat(),
+        "notas": texto(datos, "notas"),
+    }
+
+
+@app.get("/api/v1/rollos")
+def listar_rollos():
+    rollos = filas("SELECT * FROM rollos ORDER BY material COLLATE NOCASE, fecha_adquisicion, id")
+    for r in rollos:
+        r["costo_gramo"] = round(r["costo"] / r["peso_inicial"], 4)
+    return jsonify(rollos)
+
+
+@app.post("/api/v1/rollos")
+def crear_rollo():
+    r = datos_rollo(cuerpo())
+    db().execute(
+        "INSERT INTO rollos (material, color, marca, peso_inicial, restante, costo, "
+        "fecha_adquisicion, notas, creado) VALUES (?,?,?,?,?,?,?,?,?)",
+        (r["material"], r["color"], r["marca"], r["peso_inicial"], r["peso_inicial"], r["costo"],
+         r["fecha_adquisicion"], r["notas"], ahora()),
+    )
+    db().commit()
+    return jsonify(ok=True), 201
+
+
+@app.put("/api/v1/rollos/<int:rid>")
+def editar_rollo(rid):
+    actual = fila("SELECT * FROM rollos WHERE id = ?", (rid,))
+    datos = cuerpo()
+    r = datos_rollo({**actual, **datos})
+    db().execute(
+        "UPDATE rollos SET material=?, color=?, marca=?, peso_inicial=?, costo=?, "
+        "fecha_adquisicion=?, notas=? WHERE id=?",
+        (r["material"], r["color"], r["marca"], r["peso_inicial"], r["costo"],
+         r["fecha_adquisicion"], r["notas"], rid),
+    )
+    if datos.get("restante") not in (None, ""):
+        diferencia = actual["restante"] - numero(datos["restante"], "material restante")
+        if abs(diferencia) > 1e-9:
+            mover_material(rid, diferencia, "ajuste", "Corrección del material restante")
+    db().commit()
+    return jsonify(ok=True)
+
+
+@app.delete("/api/v1/rollos/<int:rid>")
+def borrar_rollo(rid):
+    db().execute("DELETE FROM rollos WHERE id = ?", (rid,))
+    db().commit()
+    return jsonify(ok=True)
+
+
+@app.post("/api/v1/rollos/<int:rid>/fallo")
+def registrar_fallo(rid):
+    fila("SELECT id FROM rollos WHERE id = ?", (rid,))
+    datos = cuerpo()
+    gramos = numero(datos.get("gramos"), "gramos")
+    if gramos <= 0:
+        raise ApiError("Indica cuántos gramos se perdieron")
+    mover_material(rid, gramos, "fallo", texto(datos, "nota"))
+    db().commit()
+    return jsonify(ok=True), 201
+
+
+@app.get("/api/v1/material/movimientos")
+def listar_movimientos():
+    movimientos = filas(
+        "SELECT m.*, r.material, r.color FROM material_movimientos m "
+        "JOIN rollos r ON r.id = m.rollo_id ORDER BY m.id DESC LIMIT 100"
+    )
+    for m in movimientos:
+        m["tipo_nombre"] = TIPOS_MOVIMIENTO.get(m["tipo"], m["tipo"])
+    return jsonify(movimientos)
 
 
 # -------------------------------------------------------------- cotizaciones
@@ -502,6 +746,10 @@ def editar_cotizacion(qid):
         (cid, c["partidas"], c["descuento_pct"], c["subtotal"], c["descuento"], c["iva"],
          c["total"], c["notas"], ahora(), qid),
     )
+    # Si ya estaba autorizada, el material descontado se recalcula con las partidas nuevas.
+    revertir_cotizacion(qid)
+    if actual["estado"] == "aceptada":
+        descontar_cotizacion(qid)
     db().commit()
     return ver_cotizacion(qid)
 
@@ -517,6 +765,11 @@ def estado_cotizacion(qid):
     db().execute(
         "UPDATE cotizaciones SET estado=?, actualizado=? WHERE id=?", (estado, ahora(), qid)
     )
+    # Autorizar la cotización aparta el filamento; dejar de estar autorizada lo regresa.
+    if estado == "aceptada":
+        descontar_cotizacion(qid)
+    else:
+        revertir_cotizacion(qid)
     db().commit()
     return ver_cotizacion(qid)
 
@@ -550,6 +803,7 @@ def cobrar_cotizacion(qid):
         "UPDATE cotizaciones SET estado='pagada', actualizado=? WHERE id=?", (fecha, qid)
     )
     db().execute("UPDATE clientes SET tipo='cliente' WHERE id=?", (q["cliente_id"],))
+    descontar_cotizacion(qid)  # por si se cobró sin pasar por "aceptada"
     db().commit()
     return ver_cotizacion(qid)
 
@@ -559,6 +813,7 @@ def borrar_cotizacion(qid):
     q = fila("SELECT * FROM cotizaciones WHERE id = ?", (qid,))
     if q["estado"] == "pagada":
         raise ApiError("Una cotización pagada forma parte del historial y no se puede borrar", 409)
+    revertir_cotizacion(qid)
     db().execute("DELETE FROM cotizaciones WHERE id = ?", (qid,))
     db().commit()
     return jsonify(ok=True)
@@ -702,6 +957,7 @@ def datos_producto(datos):
         texto(datos, "nombre", requerido=True),
         round(numero(datos.get("precio"), "precio"), 2),
         numero(datos.get("stock"), "stock"),
+        numero(datos.get("gramos_pieza"), "gramos por pieza"),
     )
 
 
@@ -713,7 +969,7 @@ def listar_productos():
 @app.post("/api/v1/productos")
 def crear_producto():
     db().execute(
-        "INSERT INTO productos (sku, nombre, precio, stock) VALUES (?,?,?,?)",
+        "INSERT INTO productos (sku, nombre, precio, stock, gramos_pieza) VALUES (?,?,?,?,?)",
         datos_producto(cuerpo()),
     )
     db().commit()
@@ -724,11 +980,34 @@ def crear_producto():
 def editar_producto(pid):
     fila("SELECT id FROM productos WHERE id = ?", (pid,))
     db().execute(
-        "UPDATE productos SET sku=?, nombre=?, precio=?, stock=? WHERE id=?",
+        "UPDATE productos SET sku=?, nombre=?, precio=?, stock=?, gramos_pieza=? WHERE id=?",
         (*datos_producto(cuerpo()), pid),
     )
     db().commit()
     return jsonify(ok=True)
+
+
+@app.post("/api/v1/productos/<int:pid>/fabricar")
+def fabricar_producto(pid):
+    """Imprime piezas para stock: suma existencia y descuenta filamento del rollo."""
+    producto = fila("SELECT * FROM productos WHERE id = ?", (pid,))
+    datos = cuerpo()
+    cantidad = numero(datos.get("cantidad"), "cantidad")
+    gramos_pieza = numero(datos.get("gramos_pieza"), "gramos por pieza")
+    if cantidad <= 0 or gramos_pieza <= 0:
+        raise ApiError("Indica la cantidad de piezas y los gramos por pieza")
+    rollo = fila("SELECT id FROM rollos WHERE id = ?", (datos.get("rollo_id"),), requerido=False)
+    if not rollo:
+        raise ApiError("Selecciona el rollo que se usó")
+    db().execute(
+        "UPDATE productos SET stock = stock + ?, gramos_pieza = ? WHERE id = ?",
+        (cantidad, gramos_pieza, pid),
+    )
+    mover_material(
+        rollo["id"], cantidad * gramos_pieza, "stock", f"{cantidad:g} × {producto['nombre']}"
+    )
+    db().commit()
+    return jsonify(ok=True), 201
 
 
 @app.delete("/api/v1/productos/<int:pid>")
@@ -739,6 +1018,26 @@ def borrar_producto(pid):
 
 
 # ------------------------------------------------------------------- tablero
+
+
+def proximos_cumpleanos(dias=30):
+    hoy = date.today()
+    proximos = []
+    for c in filas("SELECT id, nombre, fecha_nacimiento FROM clientes WHERE fecha_nacimiento != ''"):
+        nacimiento = date.fromisoformat(c["fecha_nacimiento"])
+        for anio in (hoy.year, hoy.year + 1):
+            try:
+                cumple = nacimiento.replace(year=anio)
+            except ValueError:  # 29 de febrero en año no bisiesto
+                cumple = date(anio, 3, 1)
+            if cumple >= hoy:
+                break
+        if (cumple - hoy).days <= dias:
+            proximos.append(
+                {"id": c["id"], "nombre": c["nombre"], "fecha": cumple.isoformat(),
+                 "dias": (cumple - hoy).days, "edad": anio - nacimiento.year}
+            )
+    return sorted(proximos, key=lambda c: c["dias"])
 
 
 @app.get("/api/v1/tablero")
@@ -770,6 +1069,16 @@ def tablero():
         mejores_clientes=filas(
             "SELECT c.id, c.nombre, SUM(v.monto) AS total FROM ventas v "
             "JOIN clientes c ON c.id = v.cliente_id GROUP BY c.id ORDER BY total DESC LIMIT 5"
+        ),
+        recordatorios=filas(
+            "SELECT r.*, c.nombre AS cliente_nombre FROM recordatorios r "
+            "JOIN clientes c ON c.id = r.cliente_id WHERE r.hecho = 0 ORDER BY r.fecha, r.id"
+        ),
+        cumpleanos=proximos_cumpleanos(),
+        material=filas(
+            "SELECT material, COUNT(*) AS rollos, SUM(restante) AS restante, "
+            "SUM(peso_inicial) AS inicial FROM rollos GROUP BY material "
+            "ORDER BY material COLLATE NOCASE"
         ),
     )
 

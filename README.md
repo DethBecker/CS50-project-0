@@ -50,6 +50,14 @@ crea solo la primera vez.
   partidas al historial del cliente.
 - **Taller** – tablero tipo kanban de órdenes (recibido → diagnóstico → … →
   entregado) con bitácora de avances por equipo y fecha promesa.
+- **Recordatorios y cumpleaños** – cada contacto puede tener fecha de nacimiento
+  y recordatorios de seguimiento con fecha; el tablero muestra los pendientes y
+  los cumpleaños de los próximos 30 días.
+- **Inventario de filamento** – rollos con material, cantidad, costo y fecha de
+  adquisición. El material restante se descuenta al autorizar («Marcar
+  aceptada») una cotización de impresión 3D que use un rollo, al registrar una
+  pieza fallida y al fabricar stock de una pieza del catálogo. Si la cotización
+  deja de estar autorizada, el material regresa al rollo.
 - **Catálogo de piezas** y **Configuración** (datos del negocio, IVA, tarifas,
   márgenes y materiales).
 

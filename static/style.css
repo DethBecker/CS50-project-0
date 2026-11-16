@@ -103,6 +103,13 @@ dialog .acciones { display: flex; justify-content: flex-end; gap: 8px; margin-to
 #aviso { position: fixed; bottom: 20px; right: 20px; background: var(--nav); color: #fff; padding: 10px 16px; border-radius: 8px; display: none; max-width: 360px; z-index: 10; }
 #aviso.error { background: var(--mal); }
 
+.vencido { color: var(--mal); font-weight: 600; }
+.hecho { color: var(--tenue); text-decoration: line-through; }
+.medidor { height: 6px; background: #e3e8ee; border-radius: 3px; overflow: hidden; min-width: 90px; margin-top: 4px; }
+.medidor > div { height: 100%; background: var(--ok); }
+.medidor.bajo > div { background: var(--alerta); }
+.medidor.agotado > div { background: var(--mal); }
+
 .solo-impresion { display: none; }
 @media (max-width: 760px) {
   body { flex-direction: column; }

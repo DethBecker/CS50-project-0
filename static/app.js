@@ -14,6 +14,9 @@ const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? n : 0; };
 const fecha = (iso) => (iso ? new Date(iso.length === 10 ? iso + 'T00:00' : iso)
   .toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+const hoyIso = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+const gramos = (g) => `${new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 }).format(g || 0)} g`;
+const nombreRollo = (r) => [r.material, r.color, r.marca].filter(Boolean).join(' ');
 const fechaHora = (iso) => new Date(iso).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 
 const ETIQUETAS = {
@@ -103,6 +106,20 @@ async function tablero() {
       <div class="panel"><h2>Ingresos por tipo de servicio</h2>
         ${tabla(['Categoría', '$Monto'], t.ventas_por_categoria.map((v) => `<tr><td>${esc(categoria(v.categoria))}</td><td class="num">${dinero(v.monto)}</td></tr>`), 'Aún no hay ventas registradas.')}
       </div>
+      <div class="panel"><h2>Recordatorios pendientes</h2>
+        ${tabla(['Fecha', 'Contacto', 'Tarea', ''], t.recordatorios.map((r) => `<tr>
+          <td class="${r.fecha < hoyIso() ? 'vencido' : ''}">${fecha(r.fecha)}${r.fecha === hoyIso() ? ' (hoy)' : ''}</td>
+          <td><a href="#/contacto/${r.cliente_id}">${esc(r.cliente_nombre)}</a></td><td>${esc(r.texto)}</td>
+          <td class="num"><button class="mini" data-act="recordatorioHecho" data-id="${r.id}" data-hecho="1">✓ Hecho</button></td></tr>`), 'No hay tareas pendientes.')}
+      </div>
+      <div class="panel"><h2>Cumpleaños en los próximos 30 días</h2>
+        ${tabla(['Fecha', 'Contacto', 'Cumple'], t.cumpleanos.map((c) => `<tr class="fila-link" data-ir="#/contacto/${c.id}">
+          <td>${fecha(c.fecha)}${c.dias === 0 ? ' (hoy)' : ''}</td><td>${esc(c.nombre)}</td><td>${c.edad} años</td></tr>`), 'Ningún cumpleaños próximo.')}
+      </div>
+      <div class="panel"><h2>Filamento disponible</h2>
+        ${tabla(['Material', '$Rollos', '$Restante'], t.material.map((m) => `<tr class="fila-link" data-ir="#/inventario">
+          <td>${esc(m.material)}</td><td class="num">${m.rollos}</td><td class="num ${m.restante <= 0 ? 'vencido' : ''}">${gramos(m.restante)}</td></tr>`), 'Aún no hay rollos en el inventario.')}
+      </div>
       <div class="panel"><h2>Mejores clientes</h2>
         ${tabla(['Cliente', '$Total gastado'], t.mejores_clientes.map((c) => `<tr class="fila-link" data-ir="#/contacto/${c.id}"><td>${esc(c.nombre)}</td><td class="num">${dinero(c.total)}</td></tr>`), 'Aún no hay ventas registradas.')}
       </div>
@@ -120,6 +137,7 @@ function camposContacto(c = {}) {
     <label>Correo<input name="email" type="email" value="${esc(c.email)}"></label>
     <label>Empresa<input name="empresa" value="${esc(c.empresa)}"></label>
     <label>¿Cómo nos conoció?<input name="origen" value="${esc(c.origen)}"></label>
+    <label>Fecha de nacimiento<input name="fecha_nacimiento" type="date" value="${esc(c.fecha_nacimiento)}"></label>
     <label class="ancho">Notas<textarea name="notas">${esc(c.notas)}</textarea></label>`;
 }
 
@@ -164,9 +182,22 @@ async function contacto(id) {
         <div><span class="tenue">Correo</span><br>${esc(c.email) || '—'}</div>
         <div><span class="tenue">Empresa</span><br>${esc(c.empresa) || '—'}</div>
         <div><span class="tenue">Origen</span><br>${esc(c.origen) || '—'}</div>
+        <div><span class="tenue">Fecha de nacimiento</span><br>${c.fecha_nacimiento ? fecha(c.fecha_nacimiento) : '—'}</div>
         <div><span class="tenue">Alta</span><br>${fecha(c.creado)}</div>
       </div>
       ${c.notas ? `<p style="white-space:pre-wrap;margin-bottom:0">${esc(c.notas)}</p>` : ''}
+    </div>
+    <div class="panel"><h2>Recordatorios de seguimiento</h2>
+      <form id="form-recordatorio" class="barra">
+        <input name="texto" required placeholder="Tarea: llamar para confirmar, enviar cotización…" style="flex:1;min-width:200px">
+        <input name="fecha" type="date" required value="${hoyIso()}" title="Fecha del recordatorio">
+        <button class="primario">Agregar recordatorio</button></form>
+      ${tabla(['Fecha', 'Tarea', ''], c.recordatorios.map((r) => `<tr>
+        <td class="${r.hecho ? 'hecho' : (r.fecha < hoyIso() ? 'vencido' : '')}">${fecha(r.fecha)}</td>
+        <td class="${r.hecho ? 'hecho' : ''}">${esc(r.texto)}</td>
+        <td class="num"><button class="mini" data-act="recordatorioHecho" data-id="${r.id}" data-hecho="${r.hecho ? '' : '1'}">${r.hecho ? 'Reabrir' : '✓ Hecho'}</button>
+          <button class="mini peligro" data-act="borrarRecordatorio" data-id="${r.id}">✕</button></td></tr>`),
+      'Sin recordatorios.')}
     </div>
     <div class="panel"><div class="barra"><h2>Historial de servicios y productos</h2><span class="espacio"></span>
       <button data-act="nuevaVenta" data-id="${c.id}">+ Venta directa</button></div>
@@ -197,6 +228,13 @@ async function contacto(id) {
         <button class="mini peligro" data-act="borrarComentario" data-id="${m.id}">✕</button></div>${esc(m.texto)}</div>`).join('')
         || '<div class="vacio">Sin comentarios.</div>'}
     </div>`;
+  $('#form-recordatorio').onsubmit = (ev) => {
+    ev.preventDefault();
+    intentar(async () => {
+      await api(`/clientes/${id}/recordatorios`, 'POST', Object.fromEntries(new FormData(ev.target)));
+      await navegar();
+    });
+  };
   $('#form-comentario').onsubmit = (ev) => {
     ev.preventDefault();
     intentar(async () => {
@@ -210,6 +248,7 @@ async function contacto(id) {
 let Q = null; // cotización en edición
 let pestana = 'servicio';
 let catalogoPiezas = [];
+let rollos = [];
 
 const SERVICIOS = [['reparacion', 'Reparación electrónica'], ['diagnostico', 'Diagnóstico electrónico'],
   ['mantenimiento', 'Mantenimiento (laptop / PC / consola)'], ['modelado3d', 'Modelado 3D']];
@@ -227,7 +266,10 @@ function calcularServicio(f, cfg) {
 /** Precio por pieza impresa: material + máquina + energía, merma, post-proceso, margen y urgencia. */
 function calcularImpresion(f, cfg) {
   const cantidad = Math.max(1, Math.round(num(f.cantidad)));
-  const material = num(f.peso) * (cfg.materiales[f.material] || 0);
+  const rollo = rollos.find((r) => String(r.id) === f.rollo_id);
+  // Con rollo del inventario se usa su costo real por gramo; sin rollo, el precio de Configuración.
+  const precioGramo = rollo ? rollo.costo_gramo : (cfg.materiales[f.material] || 0);
+  const material = num(f.peso) * precioGramo;
   const maquina = num(f.horas) * cfg.costo_maquina_hora;
   const energia = num(f.horas) * cfg.costo_energia_hora;
   const merma = (material + maquina + energia) * cfg.tasa_fallos_pct / 100;
@@ -238,7 +280,7 @@ function calcularImpresion(f, cfg) {
   let precio = r2(costo + margen + urgencia);
   const minimoAplicado = precio > 0 && precio * cantidad < cfg.minimo_3d;
   if (minimoAplicado) precio = r2(cfg.minimo_3d / cantidad);
-  return { cantidad, material, maquina, energia, merma, postproceso, margen, urgencia, precio, minimoAplicado };
+  return { cantidad, rollo, precioGramo, material, maquina, energia, merma, postproceso, margen, urgencia, precio, minimoAplicado };
 }
 
 const lineas = (pares) => `<table>${pares.map(([texto, valor, fuerte]) =>
@@ -260,7 +302,9 @@ function htmlCalculadora(cfg) {
   if (pestana === 'impresion3d') {
     return `<form id="calc" class="campos">
       <label class="ancho">Descripción de la pieza *<input name="descripcion" required placeholder="Ej. Carcasa para sensor"></label>
-      <label>Material<select name="material">${opciones(Object.entries(cfg.materiales).map(([m, p]) => [m, `${m} (${dinero(p)}/g)`]))}</select></label>
+      <label class="ancho">Rollo del inventario<select name="rollo_id">${opciones([['', '— Sin rollo (no descuenta inventario) —'],
+        ...rollos.map((r) => [r.id, `${nombreRollo(r)} · quedan ${gramos(r.restante)} · ${dinero(r.costo_gramo)}/g`])])}</select></label>
+      <label id="campo-material">Material<select name="material">${opciones(Object.entries(cfg.materiales).map(([m, p]) => [m, `${m} (${dinero(p)}/g)`]))}</select></label>
       <label>Peso por pieza (g)<input name="peso" type="number" min="0" step="0.1" value="50"></label>
       <label>Horas de impresión por pieza<input name="horas" type="number" min="0" step="0.1" value="3"></label>
       <label>Horas de post-proceso por pieza<input name="postproceso" type="number" min="0" step="0.05" value="0.25"></label>
@@ -293,7 +337,11 @@ function montarCalculadora(cfg) {
         ['Recargo por urgencia', c.urgencia], ['Precio del servicio', c.precio, true]]);
     } else if (pestana === 'impresion3d') {
       const c = calcularImpresion(f, cfg);
-      html = lineas([['Material', c.material], ['Uso de máquina', c.maquina], ['Energía', c.energia],
+      $('#campo-material').style.display = c.rollo ? 'none' : '';
+      const necesario = num(f.peso) * c.cantidad;
+      html = (c.rollo && necesario > c.rollo.restante
+        ? `<div class="vencido">El rollo no alcanza: se necesitan ${gramos(necesario)} y quedan ${gramos(c.rollo.restante)}.</div>` : '')
+        + lineas([[`Material (${dinero(c.precioGramo)}/g)`, c.material], ['Uso de máquina', c.maquina], ['Energía', c.energia],
         [`Merma por fallos (${cfg.tasa_fallos_pct}%)`, c.merma], ['Post-proceso', c.postproceso],
         [`Margen (${num(f.margen)}%)`, c.margen], ['Recargo por urgencia', c.urgencia],
         ['Precio por pieza', c.precio, true], [`Importe (${c.cantidad} pza)`, r2(c.precio * c.cantidad), true]])
@@ -323,7 +371,9 @@ function montarCalculadora(cfg) {
       partida = { categoria: f.tipo, descripcion: `${categoria(f.tipo)}: ${f.descripcion.trim()}`, cantidad: 1, precio_unitario: c.precio, detalle: f };
     } else if (pestana === 'impresion3d') {
       const c = calcularImpresion(f, cfg);
-      partida = { categoria: 'impresion3d', descripcion: `Impresión 3D (${f.material}): ${f.descripcion.trim()}`, cantidad: c.cantidad, precio_unitario: c.precio, detalle: f };
+      const material = c.rollo ? nombreRollo(c.rollo) : f.material;
+      partida = { categoria: 'impresion3d', descripcion: `Impresión 3D (${material}): ${f.descripcion.trim()}`, cantidad: c.cantidad, precio_unitario: c.precio,
+        detalle: { ...f, rollo_id: c.rollo ? c.rollo.id : null } };
     } else {
       partida = { categoria: 'pieza', descripcion: f.descripcion.trim(), cantidad: Math.max(1, num(f.cantidad)), precio_unitario: r2(num(f.precio)),
         detalle: f.producto ? { producto_id: Number(f.producto) } : {} };
@@ -353,8 +403,9 @@ function pintarPartidas() {
 }
 
 async function cotizador(id, clienteId) {
-  const [clientes, piezas] = await Promise.all([api('/clientes'), api('/productos')]);
+  const [clientes, piezas, inventario] = await Promise.all([api('/clientes'), api('/productos'), api('/rollos')]);
   catalogoPiezas = piezas;
+  rollos = inventario;
   const cfg = META.config;
   if (id && id !== 'nueva') {
     const q = await api(`/cotizaciones/${id}`);
@@ -509,7 +560,8 @@ const camposProducto = (p = {}) => `
   <label class="ancho">Nombre *<input name="nombre" required value="${esc(p.nombre)}"></label>
   <label>SKU / clave<input name="sku" value="${esc(p.sku)}"></label>
   <label>Precio ($)<input name="precio" type="number" min="0" step="0.01" value="${esc(p.precio ?? 0)}"></label>
-  <label>Existencia<input name="stock" type="number" min="0" step="1" value="${esc(p.stock ?? 0)}"></label>`;
+  <label>Existencia<input name="stock" type="number" min="0" step="1" value="${esc(p.stock ?? 0)}"></label>
+  <label>Filamento por pieza (g)<input name="gramos_pieza" type="number" min="0" step="0.1" value="${esc(p.gramos_pieza ?? 0)}"></label>`;
 
 async function catalogo() {
   catalogoPiezas = await api('/productos');
@@ -518,9 +570,52 @@ async function catalogo() {
       <button class="primario" data-act="nuevoProducto">+ Nueva pieza</button></div>
     <div class="panel">${tabla(['SKU', 'Nombre', '$Precio', '$Existencia', ''], catalogoPiezas.map((p) => `<tr>
       <td>${esc(p.sku)}</td><td>${esc(p.nombre)}</td><td class="num">${dinero(p.precio)}</td><td class="num">${p.stock}</td>
-      <td class="num"><button class="mini" data-act="editarProducto" data-id="${p.id}">Editar</button>
+      <td class="num"><button class="mini" data-act="fabricarProducto" data-id="${p.id}">Fabricar stock</button>
+        <button class="mini" data-act="editarProducto" data-id="${p.id}">Editar</button>
         <button class="mini peligro" data-act="borrarProducto" data-id="${p.id}">✕</button></td></tr>`),
     'El catálogo está vacío.')}</div>`;
+}
+
+// -------------------------------------------------------------- inventario
+function camposRollo(r = {}) {
+  const materiales = Object.keys(META.config.materiales);
+  if (r.material && !materiales.includes(r.material)) materiales.push(r.material);
+  return `
+    <label>Material<select name="material">${opciones(materiales.map((m) => [m, m]), r.material)}</select></label>
+    <label>Color<input name="color" value="${esc(r.color)}"></label>
+    <label>Marca<input name="marca" value="${esc(r.marca)}"></label>
+    <label>Cantidad de material (g) *<input name="peso_inicial" type="number" min="1" step="1" required value="${esc(r.peso_inicial ?? 1000)}"></label>
+    <label>Costo del rollo ($) *<input name="costo" type="number" min="0" step="0.01" required value="${esc(r.costo ?? '')}"></label>
+    <label>Fecha de adquisición<input name="fecha_adquisicion" type="date" value="${esc(r.fecha_adquisicion || hoyIso())}"></label>
+    ${r.id ? `<label>Material restante (g)<input name="restante" type="number" step="0.1" value="${esc(r.restante)}"></label>` : ''}
+    <label class="ancho">Notas<input name="notas" value="${esc(r.notas)}"></label>`;
+}
+
+async function inventario() {
+  const [lista, movimientos] = await Promise.all([api('/rollos'), api('/material/movimientos')]);
+  rollos = lista;
+  const medidor = (r) => {
+    const pct = Math.max(0, Math.min(100, r.restante / r.peso_inicial * 100));
+    return `<div class="medidor ${r.restante <= 0 ? 'agotado' : (pct < 15 ? 'bajo' : '')}"><div style="width:${pct}%"></div></div>`;
+  };
+  vista.innerHTML = `
+    <div class="barra"><h1>Inventario de filamento</h1><span class="espacio"></span>
+      <button class="primario" data-act="nuevoRollo">+ Nuevo rollo</button></div>
+    <div class="panel">${tabla(['Rollo', 'Adquisición', '$Costo', '$Costo por gramo', '$Inicial', '$Restante', ''], lista.map((r) => `<tr>
+      <td><strong>${esc(nombreRollo(r))}</strong>${r.notas ? `<br><span class="tenue">${esc(r.notas)}</span>` : ''}</td>
+      <td>${fecha(r.fecha_adquisicion)}</td><td class="num">${dinero(r.costo)}</td><td class="num">${dinero(r.costo_gramo)}</td>
+      <td class="num">${gramos(r.peso_inicial)}</td>
+      <td class="num ${r.restante <= 0 ? 'vencido' : ''}">${r.restante < 0 ? `Faltan ${gramos(-r.restante)}` : gramos(r.restante)}${medidor(r)}</td>
+      <td class="num"><button class="mini" data-act="falloRollo" data-id="${r.id}">Registrar fallo</button>
+        <button class="mini" data-act="editarRollo" data-id="${r.id}">Editar</button>
+        <button class="mini peligro" data-act="borrarRollo" data-id="${r.id}">✕</button></td></tr>`),
+    'Aún no hay rollos. Agrega el primero con «+ Nuevo rollo».')}</div>
+    <div class="panel"><h2>Movimientos de material</h2>
+      ${tabla(['Fecha', 'Rollo', 'Motivo', 'Detalle', '$Material'], movimientos.map((m) => `<tr>
+        <td>${fechaHora(m.creado)}</td><td>${esc([m.material, m.color].filter(Boolean).join(' '))}</td><td>${esc(m.tipo_nombre)}</td>
+        <td>${m.cotizacion_id ? `<a href="#/cotizacion/${m.cotizacion_id}">${esc(m.nota)}</a>` : esc(m.nota)}</td>
+        <td class="num">${m.gramos > 0 ? '−' : '+'}${gramos(Math.abs(m.gramos))}</td></tr>`),
+      'Sin movimientos todavía.')}</div>`;
 }
 
 // ----------------------------------------------------------- configuración
@@ -624,7 +719,11 @@ const acciones = {
     aviso(`Cotización ${q.folio} guardada`);
     location.hash = `#/cotizacion/${q.id}`;
   },
-  estadoCotizacion: async ({ id, estado }) => { await api(`/cotizaciones/${id}/estado`, 'POST', { estado }); await navegar(); },
+  estadoCotizacion: async ({ id, estado }) => {
+    await api(`/cotizaciones/${id}/estado`, 'POST', { estado });
+    if (estado === 'aceptada') aviso('Cotización autorizada; el filamento se descontó del inventario');
+    await navegar();
+  },
   cobrarCotizacion: async ({ id }) => {
     if (!confirmar('¿Registrar el pago? Las partidas pasarán al historial del cliente y la cotización ya no podrá editarse.')) return;
     await api(`/cotizaciones/${id}/cobrar`, 'POST', {});
@@ -639,6 +738,37 @@ const acciones = {
 
   nuevoEquipo: ({ cliente, cotizacion }) => formularioEquipo({ cliente_id: cliente, cotizacion_id: cotizacion ? Number(cotizacion) : null }),
   editarEquipo: async ({ id }) => formularioEquipo(await api(`/equipos/${id}`)),
+
+  recordatorioHecho: async ({ id, hecho }) => { await api(`/recordatorios/${id}/hecho`, 'POST', { hecho: Boolean(hecho) }); await navegar(); },
+  borrarRecordatorio: async ({ id }) => { await api(`/recordatorios/${id}`, 'DELETE'); await navegar(); },
+
+  nuevoRollo: () => formulario('Nuevo rollo de filamento', camposRollo(), async (f) => { await api('/rollos', 'POST', f); await navegar(); }),
+  editarRollo: ({ id }) => {
+    const r = rollos.find((x) => String(x.id) === id);
+    formulario('Editar rollo', camposRollo(r), async (f) => { await api(`/rollos/${id}`, 'PUT', f); await navegar(); });
+  },
+  borrarRollo: async ({ id }) => {
+    if (!confirmar('¿Borrar este rollo y su historial de movimientos?')) return;
+    await api(`/rollos/${id}`, 'DELETE');
+    await navegar();
+  },
+  falloRollo: ({ id }) => {
+    const r = rollos.find((x) => String(x.id) === id);
+    formulario(`Pieza fallida · ${nombreRollo(r)}`, `
+      <label>Material perdido (g) *<input name="gramos" type="number" min="0.1" step="0.1" required></label>
+      <label class="ancho">Nota<input name="nota" placeholder="Ej. Se despegó de la cama a la mitad"></label>`,
+    async (f) => { await api(`/rollos/${id}/fallo`, 'POST', f); await navegar(); });
+  },
+  fabricarProducto: async ({ id }) => {
+    const p = catalogoPiezas.find((x) => String(x.id) === id);
+    rollos = await api('/rollos');
+    if (!rollos.length) throw new Error('Primero agrega un rollo en Inventario de filamento.');
+    formulario(`Fabricar stock · ${p.nombre}`, `
+      <label class="ancho">Rollo usado *<select name="rollo_id" required>${opciones(rollos.map((r) => [r.id, `${nombreRollo(r)} · quedan ${gramos(r.restante)}`]))}</select></label>
+      <label>Piezas fabricadas *<input name="cantidad" type="number" min="1" step="1" required value="1"></label>
+      <label>Filamento por pieza (g) *<input name="gramos_pieza" type="number" min="0.1" step="0.1" required value="${esc(p.gramos_pieza || '')}"></label>`,
+    async (f) => { await api(`/productos/${id}/fabricar`, 'POST', f); await navegar(); });
+  },
 
   nuevoProducto: () => formulario('Nueva pieza', camposProducto(), async (f) => { await api('/productos', 'POST', f); await navegar(); }),
   editarProducto: ({ id }) => {
@@ -667,7 +797,7 @@ document.addEventListener('click', (ev) => {
 });
 
 // ------------------------------------------------------------------ rutas
-const rutas = { tablero, contactos, contacto, cotizador, cotizaciones, cotizacion, taller, equipo, catalogo, config };
+const rutas = { tablero, contactos, contacto, cotizador, cotizaciones, cotizacion, taller, equipo, catalogo, inventario, config };
 
 async function navegar() {
   const [nombre, id, extra] = location.hash.replace(/^#\/?/, '').split('/');
