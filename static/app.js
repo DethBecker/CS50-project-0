@@ -233,7 +233,7 @@ function calcularImpresion(f, cfg) {
   const merma = (material + maquina + energia) * cfg.tasa_fallos_pct / 100;
   const postproceso = num(f.postproceso) * cfg.tarifa_postproceso_hora;
   const costo = material + maquina + energia + merma + postproceso;
-  const margen = costo * cfg.margen_3d_pct / 100;
+  const margen = costo * num(f.margen) / 100;
   const urgencia = f.prioridad === 'urgente' ? (costo + margen) * cfg.recargo_urgencia_pct / 100 : 0;
   let precio = r2(costo + margen + urgencia);
   const minimoAplicado = precio > 0 && precio * cantidad < cfg.minimo_3d;
@@ -265,6 +265,7 @@ function htmlCalculadora(cfg) {
       <label>Horas de impresión por pieza<input name="horas" type="number" min="0" step="0.1" value="3"></label>
       <label>Horas de post-proceso por pieza<input name="postproceso" type="number" min="0" step="0.05" value="0.25"></label>
       <label>Cantidad de piezas<input name="cantidad" type="number" min="1" step="1" value="1"></label>
+      <label>Margen de ganancia (%)<input name="margen" type="number" min="0" step="1" value="${cfg.margen_3d_pct}"></label>
       <label>Prioridad (urgente +${cfg.recargo_urgencia_pct}%)<select name="prioridad">${opciones(PRIORIDAD)}</select></label>
       <div class="resultado ancho" id="desglose"></div>
       <div class="ancho"><button class="primario">Agregar a la cotización</button></div></form>`;
@@ -294,7 +295,7 @@ function montarCalculadora(cfg) {
       const c = calcularImpresion(f, cfg);
       html = lineas([['Material', c.material], ['Uso de máquina', c.maquina], ['Energía', c.energia],
         [`Merma por fallos (${cfg.tasa_fallos_pct}%)`, c.merma], ['Post-proceso', c.postproceso],
-        [`Margen (${cfg.margen_3d_pct}%)`, c.margen], ['Recargo por urgencia', c.urgencia],
+        [`Margen (${num(f.margen)}%)`, c.margen], ['Recargo por urgencia', c.urgencia],
         ['Precio por pieza', c.precio, true], [`Importe (${c.cantidad} pza)`, r2(c.precio * c.cantidad), true]])
         + (c.minimoAplicado ? `<div class="tenue">Se aplicó el cobro mínimo de ${dinero(cfg.minimo_3d)}.</div>` : '');
     } else {
@@ -531,7 +532,7 @@ const CAMPOS_CONFIG = [
     ['margen_refacciones_pct', 'Margen en refacciones (%)'], ['recargo_urgencia_pct', 'Recargo por urgencia (%)']]],
   ['Cotizador de impresión 3D', [['costo_maquina_hora', 'Uso de máquina por hora ($)'], ['costo_energia_hora', 'Energía por hora ($)'],
     ['tarifa_postproceso_hora', 'Tarifa/hora post-proceso ($)'], ['tasa_fallos_pct', 'Merma por fallos (%)'],
-    ['margen_3d_pct', 'Margen de ganancia (%)'], ['minimo_3d', 'Cobro mínimo por trabajo ($)']]],
+    ['margen_3d_pct', 'Margen de ganancia sugerido (%)'], ['minimo_3d', 'Cobro mínimo por trabajo ($)']]],
 ];
 
 const filaMaterial = (nombre = '', precio = '') => `<div class="barra material" style="margin-bottom:6px">
